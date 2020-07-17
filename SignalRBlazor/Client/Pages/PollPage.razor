@@ -1,0 +1,106 @@
+﻿@page "/pollpage/{id:guid}"
+@using SignalRBlazor.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.SignalR.Client
+@attribute [Authorize]
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@implements IDisposable
+
+<div class="container">
+	<NavLink class="nav-link" href="pollpage">
+		<span class="oi oi-arrow-thick-left" aria-hidden="true"></span> Back
+	</NavLink>
+
+	@if (poll == null)
+	{
+		<p>Poll does not exist</p>
+		<p>@Id</p>
+	}
+	<div class="col-sm-6">
+		@if (poll != null)
+		{
+			<h3>Current Poll: @poll.Name</h3>
+
+			@if (poll.PollEnd > DateTime.UtcNow)
+			{
+				<h5>Poll expires at: @poll.PollEnd.ToLocalTime()</h5>
+
+				<div class="list-group">
+					@foreach (var option in poll.PollOptions)
+					{
+						<a href="" @onclick="(() => VotePollOption(option.Id))" @onclick:preventDefault class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+							@option.Name
+							<span class="badge badge-primary badge-pill">@option.Votes</span>
+						</a>
+					}
+				</div>
+			}
+			else
+			{
+				<h5>Poll expired at: @poll.PollEnd.ToLocalTime()</h5>
+
+				<div class="list-group">
+					@foreach (var option in poll.PollOptions)
+					{
+						<a class="list-group-item d-flex justify-content-between align-items-center">
+							@option.Name
+							<span class="badge badge-primary badge-pill">@option.Votes</span>
+						</a>
+					}
+				</div>
+			}
+		}
+	</div>
+</div>
+
+@code {
+	[Parameter]
+	public Guid Id { get; set; }
+
+	private HubConnection hubConnection;
+	private Poll poll;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await GetPoll();
+
+		hubConnection = new HubConnectionBuilder()
+			.WithUrl(NavigationManager.ToAbsoluteUri("/pollhub"))
+			.Build();
+
+		hubConnection.On("PollChanged", async () =>
+		{
+			await GetPoll();
+		});
+
+		await hubConnection.StartAsync();
+
+		await hubConnection.SendAsync("SubscribeToPoll", poll.Id);
+	}
+
+	async Task GetPoll()
+	{
+		try
+		{
+			poll = await Http.GetFromJsonAsync<Poll>("api/poll/" + Id);
+			StateHasChanged();
+		}
+		catch
+		{ }
+	}
+
+	void VotePollOption(Guid id)
+	{
+		Http.PostAsJsonAsync<Guid>("api/poll/vote/" + poll.Id, id);
+	}
+
+	public bool IsConnected =>
+		hubConnection.State == HubConnectionState.Connected;
+
+	public void Dispose()
+	{
+		_ = hubConnection.DisposeAsync();
+	}
+}

@@ -1,1 +1,1 @@
-SingalRBlazor
+SignalRBlazor

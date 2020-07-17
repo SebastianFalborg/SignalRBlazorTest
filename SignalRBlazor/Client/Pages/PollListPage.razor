@@ -1,0 +1,135 @@
+﻿@page "/pollpage"
+@using SignalRBlazor.Shared
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@implements IDisposable
+
+
+
+<div class="container">
+	<div class="row">
+		<div class="col-sm-6">
+			<button type="button" class="btn btn-primary p-2" @onclick="StartAddPoll">Begin a new poll</button>
+
+			@if (newPoll != null)
+			{
+				<form>
+					<div class="form-group p-2">
+						<label for="PollName">Poll name</label>
+						<input class="form-control" id="PollName" @bind-value="newPoll.Name" type="text" />
+					</div>
+
+					<button type="button" class="btn btn-sm btn-secondary" @onclick="AddPollOption">Add option</button>
+
+					@for (int i = 0; i < newPoll.PollOptions.Count; i++)
+					{
+						var index = i;
+
+						<div class="form-group p-2">
+							<label for="@newPoll.PollOptions[index].Id">Poll option @(index+1)</label>
+							<input class="form-control" id="@newPoll.PollOptions[index].Id" @bind-value="newPoll.PollOptions[index].Name" type="text" />
+						</div>
+					}
+
+					<button type="button" class="btn btn-success" @onclick="SubmitPoll">Submit poll</button>
+				</form>
+			}
+		</div>
+	</div>
+
+	<div class="row">
+		<div class="col-sm-6">
+			<h3>Running polls</h3>
+			<div class="list-group">
+				@foreach (var poll in polls)
+				{
+					<a class="list-group-item list-group-item-action" href="pollpage/@poll.Id.ToString()">@poll.Name</a>
+				}
+			</div>
+		</div>
+	</div>
+
+	<div class="row">
+		<div class="col-sm-6">
+			<h3>Expired polls</h3>
+			<div class="list-group">
+				@foreach (var poll in expiredPolls)
+				{
+					<a class="list-group-item list-group-item-action" href="pollpage/@poll.Id.ToString()">@poll.Name</a>
+				}
+			</div>
+		</div>
+	</div>
+</div>
+
+@code {
+	private HubConnection hubConnection;
+	private Poll newPoll;
+	private List<Poll> polls = new List<Poll>();
+	private List<Poll> expiredPolls = new List<Poll>();
+
+	protected override async Task OnInitializedAsync()
+	{
+		await GetPolls();
+
+		hubConnection = new HubConnectionBuilder()
+		.WithUrl(NavigationManager.ToAbsoluteUri("/pollhub"))
+		.Build();
+
+		hubConnection.On("PollChanged", async () =>
+		{
+			await GetPolls();
+		});
+
+		await hubConnection.StartAsync();
+
+		await hubConnection.SendAsync("SubscribeToPollList");
+	}
+
+	async Task GetPolls()
+	{
+		try
+		{
+			polls = await Http.GetFromJsonAsync<List<Poll>>("api/poll");
+			expiredPolls = await Http.GetFromJsonAsync<List<Poll>>("api/poll/expired");
+
+			StateHasChanged();
+		}
+		catch
+		{ }
+	}
+
+	void StartAddPoll()
+	{
+		newPoll = new Poll();
+	}
+
+	void AddPollOption()
+	{
+		newPoll.PollOptions.Add(new PollOption());
+	}
+
+	async void SubmitPoll()
+	{
+		var result = await Http.PostAsJsonAsync<Poll>("api/poll", newPoll);
+
+		var pollId = await result.Content.ReadFromJsonAsync<Guid>();
+
+		newPoll = null;
+
+		if (pollId != null && pollId != Guid.Empty)
+		{
+			NavigationManager.NavigateTo("pollpage/" + pollId);
+		}
+	}
+
+	public bool IsConnected =>
+		hubConnection.State == HubConnectionState.Connected;
+
+	public void Dispose()
+	{
+		_ = hubConnection.DisposeAsync();
+	}
+}
