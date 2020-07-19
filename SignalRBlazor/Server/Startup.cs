@@ -15,6 +15,10 @@ using SignalRBlazor.Server.Data;
 using SignalRBlazor.Server.Models;
 using SignalRBlazor.Server.Hubs;
 using SignalRBlazor.Server.Services;
+using Microsoft.Azure.Services.AppAuthentication;
+using Microsoft.Azure.KeyVault;
+using System;
+using System.Security.Cryptography.X509Certificates;
 
 namespace SignalRBlazor.Server
 {
@@ -38,7 +42,15 @@ namespace SignalRBlazor.Server
 			services.AddDefaultIdentity<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
 				.AddEntityFrameworkStores<ApplicationDbContext>();
 
-			services.AddIdentityServer()
+			AzureServiceTokenProvider azureServiceTokenProvider = new AzureServiceTokenProvider("RunAs=App;AppId=8592db7b-ba88-4c58-9555-ca1bac9ab887;TenantId=17b71a55-cd8a-4580-a3bc-44a0a4d4773d;AppKey=I7Ld_b2KN8m.HA6Ck.y47F-4KRMJ68I5T.");
+
+			KeyVaultClient keyVaultClient = new KeyVaultClient(new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback));
+			var secret = keyVaultClient.GetSecretAsync("https://signalrblazor.vault.azure.net/secrets/SignalRBlazor/d61e5513275e4394a3e5544d890a54de").Result;
+
+			byte[] privateKeyBytes = Convert.FromBase64String(secret.Value);
+			X509Certificate2 certificateWithPrivateKey = new X509Certificate2(privateKeyBytes, (string)null, X509KeyStorageFlags.MachineKeySet);
+
+			services.AddIdentityServer().AddSigningCredential(certificateWithPrivateKey)
 				.AddApiAuthorization<ApplicationUser, ApplicationDbContext>();
 
 			services.AddAuthentication()
